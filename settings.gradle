@@ -1,0 +1,37 @@
+pluginManagement {
+    repositories {
+        maven {
+            url "https://maven.aliyun.com/repository/google"
+        }
+        maven {
+            url "https://maven.aliyun.com/repository/public"
+        }
+        maven { url 'https://www.jitpack.io' }
+        maven {
+            url "https://maven.aliyun.com/repository/central"
+        }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        maven {
+            url "https://maven.aliyun.com/repository/google"
+        }
+        maven {
+            url "https://maven.aliyun.com/repository/public"
+        }
+        maven { url 'https://www.jitpack.io' }
+        maven {
+            url "https://maven.aliyun.com/repository/central"
+        }
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "AMapTest"
+include ':app'
