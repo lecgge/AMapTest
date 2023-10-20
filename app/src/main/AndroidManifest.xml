@@ -29,6 +29,7 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
+        android:name=".App"
         android:theme="@style/Theme.AMapTest"
         tools:targetApi="31">
         <activity

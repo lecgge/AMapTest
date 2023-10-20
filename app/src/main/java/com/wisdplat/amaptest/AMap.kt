@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -42,7 +43,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.amap.api.location.AMapLocation
 import com.amap.api.location.AMapLocationClient
 import com.amap.api.location.AMapLocationClientOption
 import com.amap.api.location.AMapLocationListener
@@ -53,13 +53,18 @@ import com.amap.api.maps.LocationSource
 import com.amap.api.maps.MapView
 import com.amap.api.maps.model.BitmapDescriptorFactory
 import com.amap.api.maps.model.LatLng
+import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.MyLocationStyle
 import com.amap.api.navi.AMapNavi
+import com.amap.api.navi.model.AMapCalcRouteResult
+import com.amap.api.navi.model.NaviLatLng
+import com.amap.api.navi.view.RouteOverLay
 import com.amap.api.services.core.LatLonPoint
 import com.amap.api.services.geocoder.GeocodeResult
 import com.amap.api.services.geocoder.GeocodeSearch
 import com.amap.api.services.geocoder.RegeocodeQuery
 import com.amap.api.services.geocoder.RegeocodeResult
+import com.wisdplat.amaptest.App.Companion.context
 import com.wisdplat.amaptest.utils.MapUtil
 
 
@@ -82,16 +87,63 @@ private lateinit var aMap: AMap
 private val myLocationStyle = MyLocationStyle()
 //位置更改监听
 private var mListener: LocationSource.OnLocationChangedListener? = null
-//起点
-private var mStartPoint: LatLonPoint? = null
-//终点
-private var mEndPoint: LatLonPoint? = null
 //地理编码搜索
 private lateinit var geocodeSearch: GeocodeSearch
 private lateinit var aMapNavi: AMapNavi
 
 @Composable
 fun Map() {
+    var mStartPoint by remember { mutableStateOf(AMapPoint("", LatLonPoint(0.0, 0.0))) }
+    var mEndpoint by remember { mutableStateOf(AMapPoint("", LatLonPoint(0.0, 0.0))) }
+
+
+    val searchListener = object : GeocodeSearch.OnGeocodeSearchListener {
+        override fun onRegeocodeSearched(p0: RegeocodeResult, p1: Int) {
+            mEndpoint = AMapPoint(
+                p0.regeocodeAddress.formatAddress,
+                LatLonPoint(p0.regeocodeQuery.point.latitude, p0.regeocodeQuery.point.longitude)
+            )
+            aMap.addMarker(MarkerOptions().position(mEndpoint.getLatLon()).title("终点").snippet("DefaultMarker"))
+        }
+
+        /**
+         * 地址转坐标
+         *
+         * @param geocodeResult
+         * @param rCode
+         */
+        override fun onGeocodeSearched(geocodeResult: GeocodeResult, rCode: Int) {
+
+        }
+
+    }
+    val locationListener = AMapLocationListener { aMapLocation ->
+        /**
+         * 接收异步返回的定位结果
+         *
+         * @param aMapLocation
+         */
+        if (aMapLocation != null) {
+            if (aMapLocation.errorCode == 0) {
+                val lat = "%.6f".format(aMapLocation.latitude)
+                val lon = "%.6f".format(aMapLocation.longitude)
+                val latLng = LatLng(lat.toDouble(), lon.toDouble())
+                //设置起点
+                mStartPoint =
+                    AMapPoint(aMapLocation.address, MapUtil.convertToLatLonPoint(latLng))
+                //显示地图定位结果
+                mLocationClient.stopLocation()
+                mListener?.onLocationChanged(aMapLocation)
+            } else {
+                //定位失败时，可通过ErrCode（错误码）信息来确定失败的原因，errInfo是错误信息，详见错误码表。
+                Log.e(
+                    "AmapError",
+                    "location Error, ErrCode:" + aMapLocation.errorCode + ", errInfo:" + aMapLocation.errorInfo
+                )
+//                        Toast.makeText(context, resources.getString(R.string.seek_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     Box {
         Box(
             modifier = Modifier
@@ -109,7 +161,7 @@ fun Map() {
                         .padding(horizontal = 10.dp)
                         .background(Color.Gray, CircleShape)
                         .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入起点"
+                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入起点", mStartPoint.name
                 )
                 Spacer(
                     modifier = Modifier
@@ -122,44 +174,81 @@ fun Map() {
                         .padding(horizontal = 10.dp)
                         .background(Color.Gray, CircleShape)
                         .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入途径点"
+                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入途径点", ""
                 )
                 PositionInput(
                     modifier = Modifier
                         .padding(horizontal = 10.dp)
                         .background(Color.Gray, CircleShape)
                         .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入终点"
+                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入终点", mEndpoint.name
                 )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = {
+                        val startList = ArrayList<NaviLatLng>()
+                        startList.add(NaviLatLng(mStartPoint.position.latitude, mStartPoint.position.longitude))
+                        val endList = ArrayList<NaviLatLng>()
+                        endList.add(NaviLatLng(mEndpoint.position.latitude, mEndpoint.position.longitude))
+                        val strategy: Int = aMapNavi.strategyConvert(
+                            //congestion 躲避拥堵
+                            true,
+                            //不走高速
+                            false,
+                            //避免收费
+                            false,
+                            //高速优先
+                            true,
+                            //多路径
+                            true
+                        )
+                        aMapNavi.calculateDriveRoute(
+                            startList,
+                            endList,
+                            null,
+                            strategy
+                        )
+                    }) {
+                        Text(text = "计算路线")
+                    }
+                }
             }
         }
         Box(modifier = Modifier.fillMaxSize()) {
-            AMap(modifier = Modifier)
+            AMap(
+                modifier = Modifier,
+                locationListener = locationListener,
+                searchListener = searchListener
+            )
         }
-
     }
 }
 
 
 @Composable
-fun AMap(modifier: Modifier) {
+fun AMap(
+    modifier: Modifier,
+    locationListener: AMapLocationListener,
+    searchListener: GeocodeSearch.OnGeocodeSearchListener
+) {
     val context = LocalContext.current
     val aMapOptionsFactory: () -> AMapOptions = { AMapOptions() }
     val mapView = remember {
         MapView(context, aMapOptionsFactory())
     }
     aMap = mapView.map
-
+    aMapNavi = AMapNavi.getInstance(LocalContext.current)
     mLocationClient = AMapLocationClient(context)
-    initLocation()
-    initMap(LocalContext.current)
+    initLocation(locationListener)
+    initMap(LocalContext.current, searchListener)
     // 添加MapView
     AndroidView(modifier = modifier, factory = { mapView })
 
     MapLifecycle(
         mapView = mapView,
         onCreate = { mapView.onCreate(Bundle()) },
-        onResume = { mapView.onResume() },
+        onResume = {
+            mapView.onResume()
+            aMapNavi.addAMapNaviListener(mAMapNaviListener) },
         onPause = {
             mapView.onPause()
         },
@@ -206,7 +295,7 @@ private fun lifecycleObserver(
 ): LifecycleEventObserver =
     LifecycleEventObserver { _, event ->
         when (event) {
-            Lifecycle.Event.ON_CREATE -> onCreate();
+            Lifecycle.Event.ON_CREATE -> onCreate()
             Lifecycle.Event.ON_RESUME -> onResume() // 重新绘制加载地图
             Lifecycle.Event.ON_PAUSE -> onPause()  // 暂停地图的绘制
             Lifecycle.Event.ON_DESTROY -> onDestroy() // 销毁地图
@@ -231,13 +320,14 @@ fun PositionInput(
     modifier: Modifier,
     icon: ImageVector,
     hint: String,
+    test: String,
     confirm: (position: String) -> Unit = {}
 ) {
     var text by remember {
         mutableStateOf("")
     }
     BasicTextField(
-        value = text,
+        value = text.ifEmpty { test },
         singleLine = true,
         onValueChange = { text = it },
         decorationBox = { innerTextField ->
@@ -255,7 +345,7 @@ fun PositionInput(
                         .width(200.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    if (text.isEmpty()) {
+                    if (test.isEmpty() && text.isEmpty()) {
                         Text(
                             text = hint,
                             style = TextStyle(color = Color(0, 0, 0, 128))
@@ -281,13 +371,10 @@ fun PositionInput(
 }
 
 
-
-
 /**
  * 初始化地图
- * @param savedInstanceState
  */
-private fun initMap(context: Context) {
+private fun initMap(context: Context, listener: GeocodeSearch.OnGeocodeSearchListener) {
     //设置最小缩放等级为16 ，缩放级别范围为[3, 20]
 //        aMap.minZoomLevel = 16f
     aMap.moveCamera(CameraUpdateFactory.zoomTo(16f))
@@ -311,13 +398,9 @@ private fun initMap(context: Context) {
         /**
          * 激活定位
          */
-        override fun activate(p0: LocationSource.OnLocationChangedListener?) {
-            if (p0 != null) {
-                mListener = p0
-            }
-            if (mLocationClient != null) {
-                mLocationClient.startLocation()//启动定位
-            }
+        override fun activate(p0: LocationSource.OnLocationChangedListener) {
+            mListener = p0
+            mLocationClient.startLocation()
         }
 
         /**
@@ -333,12 +416,13 @@ private fun initMap(context: Context) {
 
     //地图点击监听
     aMap.setOnMapClickListener { latLng ->
-        aMap.clear()
+        aMap.clear(true)
+
         //终点
-        mEndPoint = MapUtil.convertToLatLonPoint(latLng)
+        val clickPoint = MapUtil.convertToLatLonPoint(latLng)
         geocodeSearch.getFromLocationAsyn(
             RegeocodeQuery(
-                mEndPoint,
+                clickPoint,
                 500f,
                 GeocodeSearch.AMAP
             )
@@ -348,64 +432,17 @@ private fun initMap(context: Context) {
     //构造 GeocodeSearch 对象
     geocodeSearch = GeocodeSearch(context)
     //设置监听
-    geocodeSearch.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
-        override fun onRegeocodeSearched(p0: RegeocodeResult?, p1: Int) {
+    geocodeSearch.setOnGeocodeSearchListener(listener)
 
-        }
-
-        /**
-         * 地址转坐标
-         *
-         * @param geocodeResult
-         * @param rCode
-         */
-        override fun onGeocodeSearched(geocodeResult: GeocodeResult, rCode: Int) {
-
-        }
-    })
 }
 
 /**
  * 初始化定位
  */
-private fun initLocation() {
+private fun initLocation(listener: AMapLocationListener) {
 
     //设置定位回调监听
-    mLocationClient.setLocationListener(object : AMapLocationListener {
-        /**
-         * 接收异步返回的定位结果
-         *
-         * @param aMapLocation
-         */
-        override fun onLocationChanged(aMapLocation: AMapLocation?) {
-            if (aMapLocation != null) {
-                if (aMapLocation.errorCode == 0) {
-                    //地址
-                    aMapLocation.address
-
-                    //获取纬度
-                    val latitude = aMapLocation.latitude
-                    //获取经度
-                    val longitude = aMapLocation.longitude
-                    val lat = "%.6f".format(aMapLocation.latitude)
-                    val lon = "%.6f".format(aMapLocation.longitude)
-                    val latLng = LatLng(lat.toDouble(), lon.toDouble())
-                    //设置起点
-                    mStartPoint = MapUtil.convertToLatLonPoint(latLng)
-                    //显示地图定位结果
-                    mLocationClient.stopLocation()
-                    mListener?.onLocationChanged(aMapLocation)
-                } else {
-                    //定位失败时，可通过ErrCode（错误码）信息来确定失败的原因，errInfo是错误信息，详见错误码表。
-                    Log.e(
-                        "AmapError",
-                        "location Error, ErrCode:" + aMapLocation.errorCode + ", errInfo:" + aMapLocation.errorInfo
-                    )
-//                        Toast.makeText(context, resources.getString(R.string.seek_failed), Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    })
+    mLocationClient.setLocationListener(listener)
     //初始化AMapLocationClientOption对象
     mLocationOption = AMapLocationClientOption()
     //使用GPS定位模式
@@ -423,5 +460,24 @@ private fun initLocation() {
     mLocationOption.isLocationCacheEnable = false
     //给定位客户端对象设置定位参数
     mLocationClient.setLocationOption(mLocationOption)
+}
+
+private val mAMapNaviListener = object : WisplatAMapNaviListener() {
+    override fun onCalculateRouteFailure(p0: AMapCalcRouteResult?) {
+        super.onCalculateRouteFailure(p0)
+
+    }
+
+    override fun onCalculateRouteSuccess(p0: AMapCalcRouteResult?) {
+        super.onCalculateRouteSuccess(p0)
+        val paths = ArrayList<MAMapNaviPath>()
+        aMapNavi.naviPaths.forEach { (_, path) ->
+            val routeOverLay = RouteOverLay(aMap, path, context)
+            routeOverLay.showEndMarker(false)
+            routeOverLay.isTrafficLine = true
+            routeOverLay.addToMap()
+            paths.add(MAMapNaviPath(path,routeOverLay))
+        }
+    }
 }
 
