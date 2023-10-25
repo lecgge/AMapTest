@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amap.api.location.AMapLocationClient
 import com.amap.api.location.AMapLocationClientOption
 import com.amap.api.location.AMapLocationListener
@@ -66,6 +68,7 @@ import com.amap.api.services.geocoder.RegeocodeQuery
 import com.amap.api.services.geocoder.RegeocodeResult
 import com.wisdplat.amaptest.App.Companion.context
 import com.wisdplat.amaptest.utils.MapUtil
+import kotlinx.coroutines.flow.asStateFlow
 
 
 /**
@@ -82,20 +85,23 @@ private lateinit var mLocationClient: AMapLocationClient
 //声明AMapLocationClientOption对象
 private lateinit var mLocationOption: AMapLocationClientOption
 //地图控制器
-private lateinit var aMap: AMap
+lateinit var aMap: AMap
 //定位样式
 private val myLocationStyle = MyLocationStyle()
 //位置更改监听
 private var mListener: LocationSource.OnLocationChangedListener? = null
 //地理编码搜索
 private lateinit var geocodeSearch: GeocodeSearch
-private lateinit var aMapNavi: AMapNavi
+lateinit var aMapNavi: AMapNavi
 
 @Composable
 fun Map() {
     var mStartPoint by remember { mutableStateOf(AMapPoint("", LatLonPoint(0.0, 0.0))) }
     var mEndpoint by remember { mutableStateOf(AMapPoint("", LatLonPoint(0.0, 0.0))) }
 
+    val viewModel : AMapViewModel = viewModel()
+
+    val routeShow by viewModel.routeShow.collectAsState()
 
     val searchListener = object : GeocodeSearch.OnGeocodeSearchListener {
         override fun onRegeocodeSearched(p0: RegeocodeResult, p1: Int) {
@@ -145,79 +151,90 @@ fun Map() {
         }
     }
     Box {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 5.dp, start = 5.dp)
-                .background(
-                    Color.White
-                )
-                .size(300.dp, 350.dp)
-                .zIndex(1f)
-        ) {
-            Column {
-                PositionInput(
-                    modifier = Modifier
-                        .padding(horizontal = 10.dp)
-                        .background(Color.Gray, CircleShape)
-                        .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入起点", mStartPoint.name
-                )
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Color.White)
-                )
-                PositionInput(
-                    modifier = Modifier
-                        .padding(horizontal = 10.dp)
-                        .background(Color.Gray, CircleShape)
-                        .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入途径点", ""
-                )
-                PositionInput(
-                    modifier = Modifier
-                        .padding(horizontal = 10.dp)
-                        .background(Color.Gray, CircleShape)
-                        .height(30.dp)
-                        .fillMaxWidth(), Icons.Filled.LocationOn, "请输入终点", mEndpoint.name
-                )
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = {
-                        val startList = ArrayList<NaviLatLng>()
-                        startList.add(NaviLatLng(mStartPoint.position.latitude, mStartPoint.position.longitude))
-                        val endList = ArrayList<NaviLatLng>()
-                        endList.add(NaviLatLng(mEndpoint.position.latitude, mEndpoint.position.longitude))
-                        val strategy: Int = aMapNavi.strategyConvert(
-                            //congestion 躲避拥堵
-                            true,
-                            //不走高速
-                            false,
-                            //避免收费
-                            false,
-                            //高速优先
-                            true,
-                            //多路径
-                            true
-                        )
-                        aMapNavi.calculateDriveRoute(
-                            startList,
-                            endList,
-                            null,
-                            strategy
-                        )
-                    }) {
-                        Text(text = "计算路线")
+        Row(modifier = Modifier
+            .align(Alignment.TopStart)) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 5.dp, start = 5.dp)
+                    .background(
+                        Color.White
+                    )
+                    .size(300.dp, 150.dp)
+                    .zIndex(1f)
+            ) {
+                Column {
+                    PositionInput(
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp)
+                            .background(Color.Gray, CircleShape)
+                            .height(30.dp)
+                            .fillMaxWidth(), Icons.Filled.LocationOn, "请输入起点", mStartPoint.name
+                    )
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color.White)
+                    )
+                    PositionInput(
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp)
+                            .background(Color.Gray, CircleShape)
+                            .height(30.dp)
+                            .fillMaxWidth(), Icons.Filled.LocationOn, "请输入途径点", ""
+                    )
+                    PositionInput(
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp)
+                            .background(Color.Gray, CircleShape)
+                            .height(30.dp)
+                            .fillMaxWidth(), Icons.Filled.LocationOn, "请输入终点", mEndpoint.name
+                    )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = {
+                            val startList = ArrayList<NaviLatLng>()
+                            startList.add(NaviLatLng(mStartPoint.position.latitude, mStartPoint.position.longitude))
+                            val endList = ArrayList<NaviLatLng>()
+                            endList.add(NaviLatLng(mEndpoint.position.latitude, mEndpoint.position.longitude))
+                            val strategy: Int = aMapNavi.strategyConvert(
+                                //congestion 躲避拥堵
+                                true,
+                                //不走高速
+                                false,
+                                //避免收费
+                                false,
+                                //高速优先
+                                true,
+                                //多路径
+                                true
+                            )
+                            aMapNavi.calculateDriveRoute(
+                                startList,
+                                endList,
+                                null,
+                                strategy
+                            )
+                        }) {
+                            Text(text = "计算路线")
+                        }
+                    }
+                }
+            }
+            if (routeShow) {
+                Box{
+                    Row {
+
                     }
                 }
             }
         }
-        Box(modifier = Modifier.fillMaxSize()) {
+
+        Box(modifier = Modifier.size(500.dp,500.dp)) {
             AMap(
                 modifier = Modifier,
                 locationListener = locationListener,
-                searchListener = searchListener
+                searchListener = searchListener,
+                viewModel = viewModel
             )
         }
     }
@@ -228,7 +245,8 @@ fun Map() {
 fun AMap(
     modifier: Modifier,
     locationListener: AMapLocationListener,
-    searchListener: GeocodeSearch.OnGeocodeSearchListener
+    searchListener: GeocodeSearch.OnGeocodeSearchListener,
+    viewModel: AMapViewModel
 ) {
     val context = LocalContext.current
     val aMapOptionsFactory: () -> AMapOptions = { AMapOptions() }
@@ -248,7 +266,7 @@ fun AMap(
         onCreate = { mapView.onCreate(Bundle()) },
         onResume = {
             mapView.onResume()
-            aMapNavi.addAMapNaviListener(mAMapNaviListener) },
+            aMapNavi.addAMapNaviListener(viewModel.mAMapNaviListener) },
         onPause = {
             mapView.onPause()
         },
@@ -462,22 +480,4 @@ private fun initLocation(listener: AMapLocationListener) {
     mLocationClient.setLocationOption(mLocationOption)
 }
 
-private val mAMapNaviListener = object : WisplatAMapNaviListener() {
-    override fun onCalculateRouteFailure(p0: AMapCalcRouteResult?) {
-        super.onCalculateRouteFailure(p0)
-
-    }
-
-    override fun onCalculateRouteSuccess(p0: AMapCalcRouteResult?) {
-        super.onCalculateRouteSuccess(p0)
-        val paths = ArrayList<MAMapNaviPath>()
-        aMapNavi.naviPaths.forEach { (_, path) ->
-            val routeOverLay = RouteOverLay(aMap, path, context)
-            routeOverLay.showEndMarker(false)
-            routeOverLay.isTrafficLine = true
-            routeOverLay.addToMap()
-            paths.add(MAMapNaviPath(path,routeOverLay))
-        }
-    }
-}
 
